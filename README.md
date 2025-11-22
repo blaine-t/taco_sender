@@ -15,7 +15,8 @@ A Rust application that sends scheduled Slack messages with taco emojis and user
     - `SLACK_CHANNEL_ID`: The ID of the Slack channel where you want to send the message
     - `SLACK_COOKIE`: Your Slack session cookie (copy from browser dev tools)
     - `SLACK_TOKEN`: Your Slack API token (starts with `xoxc-`)
-    - `SLACK_USER_IDS`: Comma-separated list of Slack user IDs to mention
+    - `SLACK_TEAM_ID`: Your Slack Team ID
+    - `SLACK_USER_ID`: Your Slack User ID
 
 ## Usage
 
@@ -39,7 +40,8 @@ The application supports the following environment variables:
 - `SLACK_CHANNEL_ID`: Target channel ID
 - `SLACK_COOKIE`: Your Slack session cookie
 - `SLACK_TOKEN`: Your Slack API token
-- `SLACK_USER_IDS`: Comma-separated user IDs to mention
+- `SLACK_TEAM_ID`: Your Slack Team ID
+- `SLACK_USER_ID`: Your Slack User ID
 
 If any environment variable is not set, the application will bail and you will need to provide them.
 
@@ -69,7 +71,12 @@ You can get your Slack token from the browser's dev tools:
 1. Open the Slack channel
 2. Look at the URL - the channel ID is at the end (starts with `C`)
 
-### User IDs
+### Team ID
+
+1. Open Slack in your browser
+2. Find the string after `client/` in the URL that starts with a `T`
+
+### User ID
 
 1. Right-click on a user's profile
 2. Copy their member ID (starts with `U`)
