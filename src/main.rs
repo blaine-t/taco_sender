@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let channel_id = env::var("SLACK_CHANNEL_ID").expect("SLACK_CHANNEL_ID not provided");
     let base_url = env::var("SLACK_BASE_URL").expect("SLACK_BASE_URL not provided");
     let team_id = env::var("SLACK_TEAM_ID").expect("SLACK_TEAM_ID not provided");
+    let current_user_id = env::var("SLACK_USER_ID").ok();
 
     // Fetch members
     let mut members = Vec::new();
@@ -84,6 +85,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         break;
+    }
+
+    // Don't send yourself tacos
+    if let Some(uid) = current_user_id {
+        members.retain(|u| u.id != uid);
     }
 
     if members.is_empty() {
