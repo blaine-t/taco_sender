@@ -3,8 +3,32 @@ use rand::Rng;
 use reqwest::blocking::Client;
 use reqwest::blocking::multipart;
 use reqwest::header::{COOKIE, HeaderMap};
+use serde::Deserialize;
 use std::env;
 use std::error::Error;
+
+#[derive(serde::Serialize)]
+struct UserListRequest {
+    token: String,
+    channels: Vec<String>,
+    present_first: bool,
+    filter: String,
+    count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marker: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UserListResponse {
+    ok: bool,
+    results: Vec<User>,
+    next_marker: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct User {
+    id: String,
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Load environment variables from .env file
@@ -14,26 +38,57 @@ fn main() -> Result<(), Box<dyn Error>> {
     let slack_token = env::var("SLACK_TOKEN").expect("SLACK_TOKEN not provided");
     let cookie = env::var("SLACK_COOKIE").expect("SLACK_COOKIE not provided");
     let channel_id = env::var("SLACK_CHANNEL_ID").expect("SLACK_CHANNEL_ID not provided");
-    let user_ids = env::var("SLACK_USER_IDS").expect("SLACK_USER_IDS not provided");
     let base_url = env::var("SLACK_BASE_URL").expect("SLACK_BASE_URL not provided");
+    let team_id = env::var("SLACK_TEAM_ID").expect("SLACK_TEAM_ID not provided");
 
-    // Build the blocks JSON with user mentions and taco emoji
-    let users: Vec<&str> = user_ids.split(',').collect();
-    let mut elements = Vec::new();
-
-    for user_id in users {
-        elements.push(format!(
-            r#"{{"type":"user","user_id":"{}"}}"#,
-            user_id.trim()
-        ));
-        elements.push(r#"{"type":"text","text":" "}"#.to_string());
-    }
-    elements.push(r#"{"type":"emoji","name":"taco","unicode":"1f32e"}"#.to_string());
-
-    let blocks = format!(
-        r#"[{{"type":"rich_text","elements":[{{"type":"rich_text_section","elements":[{}]}}]}}]"#,
-        elements.join(",")
+    // Fetch members
+    let mut members = Vec::new();
+    let mut cursor: Option<String> = None;
+    let client = Client::new();
+    let users_url = format!(
+        "https://edgeapi.slack.com/cache/{team_id}/users/list?_x_app_name=client&fp=bb&_x_num_retries=0"
     );
+
+    loop {
+        let body = UserListRequest {
+            token: slack_token.clone(),
+            channels: vec![channel_id.clone()],
+            present_first: true,
+            filter: "everyone AND NOT bots AND NOT apps".to_string(),
+            count: 100,
+            marker: cursor.clone(),
+        };
+
+        let resp = client
+            .post(&users_url)
+            .header(COOKIE, &cookie)
+            .json(&body)
+            .send()?
+            .json::<UserListResponse>()?;
+
+        if !resp.ok {
+            return Err(format!("Failed to fetch members").into());
+        }
+
+        members.extend(resp.results);
+
+        if let Some(marker) = resp.next_marker {
+            if !marker.is_empty() {
+                cursor = Some(marker);
+                println!(
+                    "Cursor: {:?} Fetched {:?} members so far...",
+                    cursor,
+                    members.len()
+                );
+                continue;
+            }
+        }
+        break;
+    }
+
+    if members.is_empty() {
+        return Err("No members found in channel".into());
+    }
 
     // Build url
     let url = format!("{base_url}/api/drafts.create");
@@ -68,14 +123,37 @@ fn main() -> Result<(), Box<dyn Error>> {
         current_date = current_date + chrono::Duration::days(1);
     }
 
-    for scheduled_time in scheduled_times {
+    for (i, scheduled_time) in scheduled_times.iter().enumerate() {
+        let mut elements = Vec::new();
+        for j in 0..5 {
+            let user_index = (i * 5 + j) % members.len();
+            let user = &members[user_index];
+
+            if j > 0 {
+                elements.push(r#"{"type":"text","text":" "}"#.to_string());
+            }
+
+            elements.push(format!(
+                r#"{{"type":"user","user_id":"{}"}}"#,
+                user.id.trim()
+            ));
+        }
+        elements.push(r#"{"type":"text","text":" "}"#.to_string());
+        elements.push(r#"{"type":"emoji","name":"taco","unicode":"1f32e"}"#.to_string());
+        elements.push(r#"{"type":"text","text":" Spreading the taco holiday cheer!"}"#.to_string());
+
+        let blocks = format!(
+            r#"[{{"type":"rich_text","elements":[{{"type":"rich_text_section","elements":[{}]}}]}}]"#,
+            elements.join(",")
+        );
+
         // Generate a unique client message ID
         let client_msg_id = uuid::Uuid::new_v4().to_string();
 
         // Build multipart form
         let form = multipart::Form::new()
             .text("token", slack_token.clone())
-            .text("blocks", blocks.clone())
+            .text("blocks", blocks)
             .text("client_msg_id", client_msg_id)
             .text(
                 "destinations",
